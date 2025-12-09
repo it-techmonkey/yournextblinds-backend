@@ -177,14 +177,14 @@ async function importProducts() {
           // Only connect tags if there are matching tags
           if (matchingTags.length > 0) {
             productData.tags = {
-              connect: matchingTags.map(tag => ({ id: tag.id })),
+              connect: matchingTags.map((tag: { id: string }) => ({ id: tag.id })),
             };
           }
 
           // Only connect categories if there are matching categories
           if (matchingCategories.length > 0) {
             productData.categories = {
-              connect: matchingCategories.map(cat => ({ id: cat.id })),
+              connect: matchingCategories.map((cat: { id: string }) => ({ id: cat.id })),
             };
           }
 
