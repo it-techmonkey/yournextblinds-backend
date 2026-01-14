@@ -26,6 +26,8 @@ model Product {
   updatedAt   DateTime                @updatedAt
   categories  Category[]
   tags        Tags[]
+  priceBandId String?
+  priceBand   PriceBand?              @relation(fields: [priceBandId], references: [id])
 }
 
 model Category {
@@ -44,3 +46,90 @@ model Tags {
   updatedAt   DateTime          @updatedAt
   products    Product[]
 }
+
+// ============================================
+// Pricing Tables
+// ============================================
+
+// Price Band - Groups pricing matrices (e.g., "Band A", "Band B")
+model PriceBand {
+  id          String            @id @default(cuid())
+  name        String            @unique  // e.g., "Band A", "Band B"
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  products    Product[]
+  priceCells  PriceCell[]
+}
+
+// Width bands for the pricing matrix (columns)
+model WidthBand {
+  id                      String                  @id @default(cuid())
+  widthMm                 Int                     // Width in millimeters (e.g., 500, 750, 1000)
+  widthInches             Int                     // Width in inches (e.g., 20, 30, 39)
+  sortOrder               Int                     // Order for display
+  createdAt               DateTime                @default(now())
+  priceCells              PriceCell[]
+  customizationPricings   CustomizationPricing[]
+
+  @@unique([widthMm])
+}
+
+// Height bands for the pricing matrix (rows)
+model HeightBand {
+  id          String            @id @default(cuid())
+  heightMm    Int               // Height in millimeters (e.g., 500, 750, 1000)
+  heightInches Int              // Height in inches (e.g., 20, 30, 39)
+  sortOrder   Int               // Order for display
+  createdAt   DateTime          @default(now())
+  priceCells  PriceCell[]
+
+  @@unique([heightMm])
+}
+
+// Individual price cells in the matrix
+model PriceCell {
+  id            String          @id @default(cuid())
+  priceBandId   String
+  widthBandId   String
+  heightBandId  String
+  price         Decimal         @db.Decimal(10, 2)  // Price in GBP
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  priceBand     PriceBand       @relation(fields: [priceBandId], references: [id], onDelete: Cascade)
+  widthBand     WidthBand       @relation(fields: [widthBandId], references: [id], onDelete: Cascade)
+  heightBand    HeightBand      @relation(fields: [heightBandId], references: [id], onDelete: Cascade)
+
+  @@unique([priceBandId, widthBandId, heightBandId])
+}
+
+// Customization options pricing (e.g., Vogue System, Metal Bottom Chain)
+model CustomizationOption {
+  id              String                    @id @default(cuid())
+  category        String                    // e.g., "vogue-system", "metal-bottom-chain"
+  optionId        String                    // e.g., "white", "blk-anth-brwn"
+  name            String                    // e.g., "White", "Blk/Anth/Brwn"
+  description     String?
+  sortOrder       Int                       @default(0)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  pricingEntries  CustomizationPricing[]
+
+  @@unique([category, optionId])
+}
+
+// Customization pricing based on width (some customizations vary by size)
+model CustomizationPricing {
+  id                    String              @id @default(cuid())
+  customizationOptionId String
+  widthBandId           String?             // Optional - if null, price applies to all widths
+  price                 Decimal             @db.Decimal(10, 2)
+  isPerUnit             Boolean             @default(false) // If true, multiply by quantity
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  customizationOption   CustomizationOption @relation(fields: [customizationOptionId], references: [id], onDelete: Cascade)
+  widthBand             WidthBand?          @relation(fields: [widthBandId], references: [id], onDelete: Cascade)
+
+  @@unique([customizationOptionId, widthBandId])
+}
+

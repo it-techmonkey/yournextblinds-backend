@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import productRoutes from '../product/product.routes.js';
 import categoryRoutes from '../category/category.routes.js';
+import pricingRoutes from '../pricing/pricing.routes.js';
 
 const router = Router();
 
@@ -18,6 +19,9 @@ router.use('/products', productRoutes);
 
 //Category route
 router.use('/categories', categoryRoutes);
+
+//Pricing route
+router.use('/pricing', pricingRoutes);
 
 
 // Placeholder routes - to be expanded

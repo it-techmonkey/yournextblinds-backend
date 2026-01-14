@@ -10,6 +10,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
+    "seed:pricing": "tsx prisma/seedPricing.ts",
     "extract:categories": "tsx src/db/extractUniqueCategories.ts",
     "extract:tags": "tsx src/db/extractUniqueTags.ts",
     "import:products": "tsx src/db/importProducts.ts",
