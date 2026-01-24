@@ -12,20 +12,28 @@ interface ExtractedProduct {
   description: string;
   slug: string;
   canonicalUrl: string;
-  
+
   // Pricing
   price: number;
   originalPrice?: number;
   currency: string;
   compareAtPrice?: number;
-  
+
   // Media
   images: Array<{
     url: string;
     alt?: string;
     position: number;
   }>;
-  
+
+  // Videos
+  videos: Array<{
+    url: string;
+    thumbnail?: string;
+    type: 'video' | 'external_video';
+    position: number;
+  }>;
+
   // Variants
   variants: Array<{
     id: string;
@@ -36,21 +44,21 @@ interface ExtractedProduct {
     sku?: string;
     options?: Record<string, string>;
   }>;
-  
+
   // Categories & Tags
   categories: string[];
   tags: string[];
-  
+
   // SEO
   metaTitle?: string;
   metaDescription?: string;
-  
+
   // Additional Info
   vendor?: string;
   productType?: string;
   stockStatus?: string;
   availability?: string;
-  
+
   // Structured Data
   structuredData?: any;
 }
@@ -78,7 +86,7 @@ function extractSlugFromUrl(url: string): string {
  */
 function extractJsonLd($: cheerio.Root): any[] {
   const jsonLdData: any[] = [];
-  
+
   $('script[type="application/ld+json"]').each((_, element) => {
     try {
       const content = $(element).html();
@@ -90,7 +98,7 @@ function extractJsonLd($: cheerio.Root): any[] {
       console.warn('Failed to parse JSON-LD:', error);
     }
   });
-  
+
   return jsonLdData;
 }
 
@@ -99,17 +107,17 @@ function extractJsonLd($: cheerio.Root): any[] {
  */
 function extractFromJsonLd(jsonLdData: any[]): Partial<ExtractedProduct> {
   const product: Partial<ExtractedProduct> = {};
-  
+
   for (const data of jsonLdData) {
     if (data['@type'] === 'Product' || data['@graph']?.some((item: any) => item['@type'] === 'Product')) {
       const productData = data['@type'] === 'Product' ? data : data['@graph']?.find((item: any) => item['@type'] === 'Product');
-      
+
       if (productData) {
         product.title = productData.name || product.title;
         product.description = productData.description || product.description;
         product.metaTitle = productData.name || product.metaTitle;
         product.metaDescription = productData.description || product.metaDescription;
-        
+
         // Extract offers/price
         if (productData.offers) {
           const offers = Array.isArray(productData.offers) ? productData.offers : [productData.offers];
@@ -131,25 +139,25 @@ function extractFromJsonLd(jsonLdData: any[]): Partial<ExtractedProduct> {
             }
           }
         }
-        
+
         // Extract images (handled separately in extractImages function)
         // This is kept for backward compatibility but images are extracted more comprehensively elsewhere
-        
+
         // Extract brand/vendor
         if (productData.brand) {
           product.vendor = typeof productData.brand === 'string' ? productData.brand : productData.brand.name;
         }
-        
+
         // Extract categories
         if (productData.category) {
-          product.categories = Array.isArray(productData.category) 
-            ? productData.category 
+          product.categories = Array.isArray(productData.category)
+            ? productData.category
             : [productData.category];
         }
       }
     }
   }
-  
+
   return product;
 }
 
@@ -158,11 +166,11 @@ function extractFromJsonLd(jsonLdData: any[]): Partial<ExtractedProduct> {
  */
 function extractFromShopifyWindow($: cheerio.Root): Partial<ExtractedProduct> {
   const product: Partial<ExtractedProduct> = {};
-  
+
   // Try to find Shopify product data in script tags
   $('script').each((_, element) => {
     const scriptContent = $(element).html() || '';
-    
+
     // Look for window.Shopify or ShopifyAnalytics
     if (scriptContent.includes('Shopify') || scriptContent.includes('product')) {
       try {
@@ -177,7 +185,7 @@ function extractFromShopifyWindow($: cheerio.Root): Partial<ExtractedProduct> {
           if (productData.type) product.productType = productData.type;
           if (productData.tags) product.tags = Array.isArray(productData.tags) ? productData.tags : productData.tags.split(',');
         }
-        
+
         // Try to extract variants
         const variantsMatch = scriptContent.match(/variants[:\s]*(\[[^\]]+\])/i);
         if (variantsMatch) {
@@ -190,13 +198,13 @@ function extractFromShopifyWindow($: cheerio.Root): Partial<ExtractedProduct> {
             available: v.available !== false,
             sku: v.sku,
           }));
-          
+
           // Extract original price from first variant's compare_at_price if available
           if (variants.length > 0 && variants[0].compare_at_price) {
             product.originalPrice = normalizePrice(parseFloat(variants[0].compare_at_price));
           }
         }
-        
+
         // Try to extract product price data directly
         const priceMatch = scriptContent.match(/["']price["']\s*:\s*["']?(\d+\.?\d*)["']?/i);
         const comparePriceMatch = scriptContent.match(/["']compare_at_price["']\s*:\s*["']?(\d+\.?\d*)["']?/i);
@@ -211,7 +219,7 @@ function extractFromShopifyWindow($: cheerio.Root): Partial<ExtractedProduct> {
       }
     }
   });
-  
+
   return product;
 }
 
@@ -220,33 +228,33 @@ function extractFromShopifyWindow($: cheerio.Root): Partial<ExtractedProduct> {
  */
 function extractFromMetaTags($: cheerio.Root): Partial<ExtractedProduct> {
   const product: Partial<ExtractedProduct> = {};
-  
+
   // Meta title
-  product.metaTitle = $('meta[property="og:title"]').attr('content') || 
-                      $('meta[name="twitter:title"]').attr('content') ||
-                      $('title').text() ||
-                      undefined;
-  
+  product.metaTitle = $('meta[property="og:title"]').attr('content') ||
+    $('meta[name="twitter:title"]').attr('content') ||
+    $('title').text() ||
+    undefined;
+
   // Meta description
   product.metaDescription = $('meta[property="og:description"]').attr('content') ||
-                            $('meta[name="twitter:description"]').attr('content') ||
-                            $('meta[name="description"]').attr('content') ||
-                            undefined;
-  
+    $('meta[name="twitter:description"]').attr('content') ||
+    $('meta[name="description"]').attr('content') ||
+    undefined;
+
   // Canonical URL
   const canonicalUrl = $('link[rel="canonical"]').attr('href') ||
-                       $('meta[property="og:url"]').attr('content');
+    $('meta[property="og:url"]').attr('content');
   if (canonicalUrl) {
     product.canonicalUrl = canonicalUrl.startsWith('http') ? canonicalUrl : new URL(canonicalUrl, 'https://example.com').href;
   }
-  
+
   // Price from meta tags
   const priceMeta = $('meta[property="product:price:amount"]').attr('content');
   if (priceMeta) {
     product.price = parseFloat(priceMeta);
     product.currency = $('meta[property="product:price:currency"]').attr('content') || 'GBP';
   }
-  
+
   return product;
 }
 
@@ -256,11 +264,11 @@ function extractFromMetaTags($: cheerio.Root): Partial<ExtractedProduct> {
 function extractImagesFromJsonLd(jsonLdData: any[]): Array<{ url: string; alt?: string; position: number }> {
   const images: Array<{ url: string; alt?: string; position: number }> = [];
   let position = 0;
-  
+
   for (const data of jsonLdData) {
     if (data['@type'] === 'Product' || data['@graph']?.some((item: any) => item['@type'] === 'Product')) {
       const productData = data['@type'] === 'Product' ? data : data['@graph']?.find((item: any) => item['@type'] === 'Product');
-      
+
       if (productData?.image) {
         const imageArray = Array.isArray(productData.image) ? productData.image : [productData.image];
         imageArray.forEach((img: string | { url?: string; contentUrl?: string }) => {
@@ -272,7 +280,7 @@ function extractImagesFromJsonLd(jsonLdData: any[]): Array<{ url: string; alt?: 
           } else if (img.contentUrl) {
             imageUrl = img.contentUrl;
           }
-          
+
           if (imageUrl && !images.some(i => i.url === imageUrl)) {
             images.push({
               url: imageUrl,
@@ -283,7 +291,7 @@ function extractImagesFromJsonLd(jsonLdData: any[]): Array<{ url: string; alt?: 
       }
     }
   }
-  
+
   return images;
 }
 
@@ -295,11 +303,11 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
   const images: Array<{ url: string; alt?: string; position: number }> = [];
   const seenUrls = new Set<string>();
   let position = 0;
-  
+
   // Look for Shopify product JSON in script tags
   $('script').each((_, element) => {
     const scriptContent = $(element).html() || '';
-    
+
     // Look for various Shopify product data patterns
     if (scriptContent.includes('"media"') || scriptContent.includes('"images"') || scriptContent.includes('product')) {
       try {
@@ -329,7 +337,7 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
             // Continue
           }
         }
-        
+
         // Pattern 2: Product JSON with media array
         const mediaArrayMatch = scriptContent.match(/"media"\s*:\s*(\[[\s\S]*?\])/i);
         if (mediaArrayMatch) {
@@ -356,7 +364,7 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
             // Continue
           }
         }
-        
+
         // Pattern 3: Product JSON with images array
         const imagesArrayMatch = scriptContent.match(/"images?"\s*:\s*(\[[\s\S]*?\])/i);
         if (imagesArrayMatch) {
@@ -382,7 +390,7 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
             // Continue
           }
         }
-        
+
         // Pattern 4: Look for product JSON object more broadly (with price data)
         const productObjectMatch = scriptContent.match(/\{[\s\S]*?"id"[\s\S]*?(?:"media"|"price"|"compare_at_price")[\s\S]*?\}/i);
         if (productObjectMatch) {
@@ -424,7 +432,7 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
             // Continue
           }
         }
-        
+
         // Pattern 5: Look for compare_at_price specifically
         const comparePriceMatch = scriptContent.match(/"compare_at_price"[\s\S]*?(\d+\.?\d*)/i);
         if (comparePriceMatch) {
@@ -443,8 +451,277 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
       }
     }
   });
-  
+
   return images;
+  return images;
+}
+
+/**
+ * Extracts videos from HTML (iframe or video tags)
+ */
+function extractVideosFromHtml($: cheerio.Root, baseUrl: string): Array<{ url: string; thumbnail?: string; type: 'video' | 'external_video'; position: number }> {
+  const videos: Array<{ url: string; thumbnail?: string; type: 'video' | 'external_video'; position: number }> = [];
+  const seenUrls = new Set<string>();
+  let position = 2000; // Start higher than script videos
+
+  // Selectors for product media containers
+  const mediaSelectors = [
+    '.product__media',
+    '.product-single__media',
+    '.product-media',
+    '.product__media-list',
+    '[data-product-media-type="video"]',
+    '[data-product-media-type="external_video"]',
+    '.product-gallery'
+  ];
+
+  mediaSelectors.forEach(selector => {
+    $(selector).each((_, container) => {
+      // Check for HTML5 Video
+      $(container).find('video source').each((_, source) => {
+        let src = $(source).attr('src');
+        if (src) {
+          src = ensureAbsoluteUrl(src, baseUrl);
+        }
+        if (src && !seenUrls.has(src)) {
+          seenUrls.add(src);
+          // Try to find a poster/thumbnail on the parent video tag
+          let poster = $(source).parent('video').attr('poster');
+          if (poster) poster = ensureAbsoluteUrl(poster, baseUrl);
+
+          videos.push({
+            url: src,
+            thumbnail: poster,
+            type: 'video',
+            position: position++
+          });
+        }
+      });
+
+      // Check for YouTube/Vimeo iframes
+      $(container).find('iframe').each((_, iframe) => {
+        let src = $(iframe).attr('src');
+        if (src) {
+          src = ensureAbsoluteUrl(src, baseUrl);
+          let type: 'external_video' | null = null;
+          if (src.includes('youtube') || src.includes('youtu.be')) {
+            type = 'external_video';
+          } else if (src.includes('vimeo')) {
+            type = 'external_video';
+          }
+
+          if (type && !seenUrls.has(src)) {
+            seenUrls.add(src);
+            videos.push({
+              url: src,
+              type: type,
+              position: position++
+            });
+          }
+        }
+      });
+
+      // Check for data-attributes that might hold video info (lazy loaded)
+      const videoData = $(container).attr('data-video-id');
+      if (videoData) {
+        // console.log(`[DEBUG] Found data-video-id: ${videoData}`);
+      }
+    });
+  });
+
+  return videos;
+}
+
+/**
+ * Helper to find valid JSON objects within a string
+ */
+function findJsonObjects(text: string): any[] {
+  const results: any[] = [];
+  let startIndex = 0;
+
+  while (true) {
+    // Find next possible start of JSON object
+    startIndex = text.indexOf('{', startIndex);
+    if (startIndex === -1) break;
+
+    // Attempt to parse from this start index
+    // We'll use a simple brace balancer to find potential end
+    let braceCount = 0;
+    let inString = false;
+    let escaped = false;
+    let endIndex = -1;
+
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            endIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (endIndex !== -1) {
+      const potentialJson = text.substring(startIndex, endIndex + 1);
+      try {
+        const parsed = JSON.parse(potentialJson);
+        // Basic heuristic to filter out trivial objects
+        if (parsed && typeof parsed === 'object' && (parsed.media || parsed.videos || parsed.product)) {
+          results.push(parsed);
+        }
+      } catch (e) {
+        // Not valid JSON, continue
+      }
+      startIndex = startIndex + 1; // Move past just the opening brace to find nested or next objects
+    } else {
+      break; // No matching brace found
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Extracts videos from Shopify product data in script tags
+ */
+function extractVideosFromShopifyData($: cheerio.Root, baseUrl: string): Array<{ url: string; thumbnail?: string; type: 'video' | 'external_video'; position: number }> {
+  const videos: Array<{ url: string; thumbnail?: string; type: 'video' | 'external_video'; position: number }> = [];
+  const seenUrls = new Set<string>();
+  let position = 1000;
+
+  $('script').each((_, element) => {
+    const scriptContent = $(element).html() || '';
+
+    // Skip if too short
+    if (scriptContent.length < 50) return;
+
+    // Use robust JSON extraction
+    const jsonObjects = findJsonObjects(scriptContent);
+
+    for (const data of jsonObjects) {
+      // Direct media array
+      if (data.media && Array.isArray(data.media)) {
+        data.media.forEach((media: any) => {
+          if (media.media_type === 'video' || media.media_type === 'external_video') {
+            const videoObj = extractVideoFromMediaObject(media, position++, baseUrl);
+            if (videoObj && !seenUrls.has(videoObj.url)) {
+              seenUrls.add(videoObj.url);
+              videos.push(videoObj);
+            }
+          }
+        });
+      }
+
+      // Product object wrapper
+      if (data.product && data.product.media && Array.isArray(data.product.media)) {
+        data.product.media.forEach((media: any) => {
+          if (media.media_type === 'video' || media.media_type === 'external_video') {
+            const videoObj = extractVideoFromMediaObject(media, position++, baseUrl);
+            if (videoObj && !seenUrls.has(videoObj.url)) {
+              seenUrls.add(videoObj.url);
+              videos.push(videoObj);
+            }
+          }
+        });
+      }
+    }
+
+    // Fallback: Check for "ReelUp" or other specific video commerce patterns in raw text if JSON failed
+    if (scriptContent.includes('ReelUp') && scriptContent.includes('.mp4')) {
+      // Try simple regex for mp4 urls in ReelUp scripts
+      const mp4Matches = scriptContent.matchAll(/["'](https:\/\/[^"']+\.mp4[^"']*)["']/g);
+      for (const match of mp4Matches) {
+        let src = match[1];
+        if (src) {
+          src = ensureAbsoluteUrl(src, baseUrl);
+          if (!seenUrls.has(src)) {
+            seenUrls.add(src);
+            videos.push({
+              url: src,
+              type: 'video',
+              position: position++
+            });
+          }
+        }
+      }
+    }
+  });
+
+  return videos;
+}
+
+function extractVideoFromMediaObject(media: any, position: number, baseUrl: string): { url: string; thumbnail?: string; type: 'video' | 'external_video'; position: number } | null {
+  if (media.media_type === 'video') {
+    // Find best source (mp4)
+    const sources = media.sources || [];
+    const mp4Source = sources.find((s: any) => s.format === 'mp4') || sources[0];
+    if (mp4Source && mp4Source.url) {
+      let url = ensureAbsoluteUrl(mp4Source.url, baseUrl);
+
+      // Clean up URL parameters mostly
+      try {
+        const urlObj = new URL(url);
+        // Keep search params for Shopify videos as they might be needed (tokens etc), 
+        // but maybe strip some if known to be garbage.
+        // For now, keep as is.
+        url = urlObj.toString();
+      } catch (e) { }
+
+      let thumbnail = media.preview_image?.src || media.src;
+      if (thumbnail) thumbnail = ensureAbsoluteUrl(thumbnail, baseUrl);
+
+      return {
+        url: url,
+        thumbnail: thumbnail,
+        type: 'video',
+        position: media.position || position
+      };
+    }
+  } else if (media.media_type === 'external_video') {
+    if (media.external_id) {
+      // Construct embed URL based on host
+      let url = '';
+      if (media.host === 'youtube') {
+        url = `https://www.youtube.com/embed/${media.external_id}`;
+      } else if (media.host === 'vimeo') {
+        url = `https://player.vimeo.com/video/${media.external_id}`;
+      }
+
+      if (url) {
+        let thumbnail = media.preview_image?.src;
+        if (thumbnail) thumbnail = ensureAbsoluteUrl(thumbnail, baseUrl);
+
+        return {
+          url,
+          thumbnail: thumbnail,
+          type: 'external_video',
+          position: media.position || position
+        };
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -452,13 +729,13 @@ function extractImagesFromShopifyData($: cheerio.Root, baseUrl: string): Array<{
  */
 function normalizeShopifyImageUrl(url: string): string {
   if (!url) return url;
-  
+
   // Remove size parameters to get original or use a high-quality size
   // Shopify CDN URLs typically have ?v=timestamp&width=size
   // We can request larger sizes or remove width to get original
   try {
     const urlObj = new URL(url);
-    
+
     // If it's a Shopify CDN URL, optimize it
     if (urlObj.hostname.includes('shopify') || urlObj.hostname.includes('cdn.shopify') || urlObj.pathname.includes('/cdn/shop/')) {
       // Remove width parameter or set to a high value for better quality
@@ -467,7 +744,7 @@ function normalizeShopifyImageUrl(url: string): string {
       // Keep the version parameter (v=) as it's important for cache busting
       return urlObj.toString();
     }
-    
+
     return url;
   } catch {
     return url;
@@ -479,17 +756,17 @@ function normalizeShopifyImageUrl(url: string): string {
  */
 function ensureAbsoluteUrl(url: string, baseUrl: string): string {
   if (!url) return url;
-  
+
   // If already absolute with protocol, return as-is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
-  
+
   // If starts with //, add https:
   if (url.startsWith('//')) {
     return 'https:' + url;
   }
-  
+
   // If starts with /, make absolute from base URL
   if (url.startsWith('/')) {
     try {
@@ -499,7 +776,7 @@ function ensureAbsoluteUrl(url: string, baseUrl: string): string {
       return 'https://' + url.replace(/^\/+/, '');
     }
   }
-  
+
   // Relative URL - make absolute
   try {
     return new URL(url, baseUrl).href;
@@ -514,13 +791,13 @@ function ensureAbsoluteUrl(url: string, baseUrl: string): string {
  */
 function getImageUrlKey(url: string): string {
   if (!url) return url;
-  
+
   // Normalize protocol first
   let normalized = url;
   if (normalized.startsWith('//')) {
     normalized = 'https:' + normalized;
   }
-  
+
   try {
     const urlObj = new URL(normalized);
     // Keep only the pathname and version param for duplicate detection
@@ -539,10 +816,10 @@ function getImageUrlKey(url: string): string {
  */
 function isProductImageUrl(url: string, alt?: string): boolean {
   if (!url) return false;
-  
+
   const urlLower = url.toLowerCase();
   const altLower = (alt || '').toLowerCase();
-  
+
   // Exclude patterns - if URL or alt contains these, it's not a product image
   const excludePatterns = [
     /icon/i,
@@ -568,35 +845,35 @@ function isProductImageUrl(url: string, alt?: string): boolean {
     /star/i,
     /rating/i,
   ];
-  
+
   // Check alt text
   if (altLower && excludePatterns.some(pattern => pattern.test(altLower))) {
     return false;
   }
-  
+
   // Check URL path
   if (excludePatterns.some(pattern => pattern.test(urlLower))) {
     return false;
   }
-  
+
   // Must be a Shopify CDN URL with product-related paths
   // Only accept URLs that contain product-specific paths
-  const hasProductPath = 
+  const hasProductPath =
     urlLower.includes('/products/') ||
     (urlLower.includes('/files/') && !urlLower.includes('icon') && !urlLower.includes('logo'));
-  
+
   // Check if it's a Shopify CDN URL (can be cdn.shopify.com or the store's CDN)
-  const isShopifyCdn = 
-    urlLower.includes('cdn.shopify') || 
+  const isShopifyCdn =
+    urlLower.includes('cdn.shopify') ||
     urlLower.includes('cdn.shopifycdn') ||
     urlLower.includes('/cdn/shop/'); // Shopify stores often use /cdn/shop/ path
-  
+
   // Must be both Shopify CDN AND have product path
   // OR if it's from a product container and looks like a product image file
   const hasImageExtension = !!urlLower.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i);
   const isNotIconLogo = !urlLower.match(/icon|logo|banner|badge/i);
   const looksLikeProductImage = hasImageExtension && isNotIconLogo;
-  
+
   return (hasProductPath && isShopifyCdn) || (isShopifyCdn && looksLikeProductImage);
 }
 
@@ -607,7 +884,7 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
   const images: Array<{ url: string; alt?: string; position: number }> = [];
   const seenUrls = new Set<string>();
   const seenUrlKeys = new Set<string>(); // For better duplicate detection
-  
+
   // 1. Extract from JSON-LD structured data (MOST RELIABLE - only source we fully trust)
   const jsonLdImages = extractImagesFromJsonLd(jsonLdData);
   jsonLdImages.forEach(img => {
@@ -622,7 +899,7 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
       images.push({ ...img, url: normalizedUrl });
     }
   });
-  
+
   // 2. Extract from Shopify product script tags (more aggressive)
   const shopifyImages = extractImagesFromShopifyData($, baseUrl);
   shopifyImages.forEach(img => {
@@ -635,22 +912,22 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
     if (normalizedUrl && !seenUrlKeys.has(urlKey)) {
       const urlLower = normalizedUrl.toLowerCase();
       const altLower = (img.alt || '').toLowerCase();
-      
+
       // Only exclude if it's clearly not a product image
-      const isExcluded = 
-        urlLower.includes('icon') || 
-        urlLower.includes('logo') || 
+      const isExcluded =
+        urlLower.includes('icon') ||
+        urlLower.includes('logo') ||
         urlLower.includes('banner') ||
         altLower.includes('icon') ||
         altLower.includes('logo');
-      
+
       // Must be Shopify CDN or product-related
-      const isShopifyImage = 
-        urlLower.includes('cdn.shopify') || 
+      const isShopifyImage =
+        urlLower.includes('cdn.shopify') ||
         urlLower.includes('/cdn/shop/') ||
         urlLower.includes('/files/') ||
         urlLower.includes('/products/');
-      
+
       if (!isExcluded && isShopifyImage) {
         seenUrls.add(normalizedUrl);
         seenUrlKeys.add(urlKey);
@@ -658,7 +935,7 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
       }
     }
   });
-  
+
   // 3. Extract from HTML - Find all product images in product galleries
   // First, find product image containers, then extract all images from them
   const productImageContainers = [
@@ -675,26 +952,26 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
     '[data-product-id]',
     '[data-product-handle]',
   ];
-  
+
   let position = images.length;
-  
+
   // Extract from product image containers
   for (const containerSelector of productImageContainers) {
     $(containerSelector).each((_, container) => {
       // Find all images within this product container
       $(container).find('img').each((_, element) => {
         // Try multiple attributes for image source
-        const src = $(element).attr('src') || 
-                    $(element).attr('data-src') || 
-                    $(element).attr('data-lazy-src') ||
-                    $(element).attr('data-original') ||
-                    $(element).attr('data-image') ||
-                    $(element).attr('data-zoom-src') ||
-                    $(element).attr('data-product-image');
-        
+        const src = $(element).attr('src') ||
+          $(element).attr('data-src') ||
+          $(element).attr('data-lazy-src') ||
+          $(element).attr('data-original') ||
+          $(element).attr('data-image') ||
+          $(element).attr('data-zoom-src') ||
+          $(element).attr('data-product-image');
+
         const srcset = $(element).attr('srcset');
         const alt = $(element).attr('alt') || $(element).attr('data-alt') || '';
-        
+
         if (src) {
           // Use srcset if available (usually higher quality)
           let imageUrl = src;
@@ -703,35 +980,35 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
             // Get the largest image from srcset
             imageUrl = srcsetUrls[srcsetUrls.length - 1] || imageUrl;
           }
-          
+
           // Ensure absolute URL with https://
           imageUrl = ensureAbsoluteUrl(imageUrl, baseUrl);
-          
+
           // Normalize Shopify CDN URLs
           imageUrl = normalizeShopifyImageUrl(imageUrl);
           const urlKey = getImageUrlKey(imageUrl);
-          
+
           // Check: Must be a product image (not icon/logo) and from Shopify CDN
           // More lenient check for images in product containers
           if (imageUrl && !seenUrlKeys.has(urlKey)) {
             const urlLower = imageUrl.toLowerCase();
             const altLower = alt.toLowerCase();
-            
+
             // Exclude obvious non-product images
-            const isExcluded = 
-              urlLower.includes('icon') || 
-              urlLower.includes('logo') || 
+            const isExcluded =
+              urlLower.includes('icon') ||
+              urlLower.includes('logo') ||
               urlLower.includes('banner') ||
               altLower.includes('icon') ||
               altLower.includes('logo');
-            
+
             // Must be Shopify CDN or product-related
-            const isShopifyImage = 
-              urlLower.includes('cdn.shopify') || 
+            const isShopifyImage =
+              urlLower.includes('cdn.shopify') ||
               urlLower.includes('/cdn/shop/') ||
               urlLower.includes('/files/') ||
               urlLower.includes('/products/');
-            
+
             if (!isExcluded && isShopifyImage) {
               seenUrls.add(imageUrl);
               seenUrlKeys.add(urlKey);
@@ -744,11 +1021,11 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
           }
         }
       });
-      
+
       // Also check for images in data attributes on the container itself
-      const containerImage = $(container).attr('data-image') || 
-                            $(container).attr('data-image-src') ||
-                            $(container).attr('data-product-image');
+      const containerImage = $(container).attr('data-image') ||
+        $(container).attr('data-image-src') ||
+        $(container).attr('data-product-image');
       if (containerImage) {
         // Ensure absolute URL with https://
         let imageUrl = ensureAbsoluteUrl(containerImage, baseUrl);
@@ -765,15 +1042,15 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
       }
     });
   }
-  
+
   // Also look for images with product-specific data attributes
   $('img[data-product-image], img[data-product-media], img[data-media-id]').each((_, element) => {
-    const src = $(element).attr('src') || 
-                $(element).attr('data-src') || 
-                $(element).attr('data-lazy-src') ||
-                $(element).attr('data-product-image');
+    const src = $(element).attr('src') ||
+      $(element).attr('data-src') ||
+      $(element).attr('data-lazy-src') ||
+      $(element).attr('data-product-image');
     const alt = $(element).attr('alt') || '';
-    
+
     if (src) {
       // Ensure absolute URL with https://
       let imageUrl = ensureAbsoluteUrl(src, baseUrl);
@@ -790,7 +1067,7 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
       }
     }
   });
-  
+
   // 4. Check og:image ONLY if it's a product image
   const ogImage = $('meta[property="og:image"]').attr('content');
   if (ogImage) {
@@ -807,12 +1084,12 @@ function extractImages($: cheerio.Root, baseUrl: string, jsonLdData: any[] = [])
       });
     }
   }
-  
+
   // Sort by position and remove duplicates
   const uniqueImages = Array.from(
     new Map(images.map(img => [img.url, img])).values()
   ).sort((a, b) => a.position - b.position);
-  
+
   // Reassign positions to be sequential
   return uniqueImages.map((img, index) => ({ ...img, position: index }));
 }
@@ -825,7 +1102,7 @@ function normalizePrice(price: number | string | undefined): number | undefined 
   if (price === undefined || price === null) return undefined;
   const numPrice = typeof price === 'string' ? parseFloat(price) : price;
   if (isNaN(numPrice)) return undefined;
-  
+
   // If price is > 100 and has no decimal part, it's likely in cents/pence
   // But we need to be careful - some prices might legitimately be > 100
   // So we check if it's a whole number and > 100
@@ -844,7 +1121,7 @@ function normalizePrice(price: number | string | undefined): number | undefined 
  */
 function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number; currency?: string } {
   const result: { price?: number; originalPrice?: number; currency?: string } = {};
-  
+
   // Common price selectors
   const priceSelectors = [
     '.product__price .price',
@@ -854,7 +1131,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
     '.price--current',
     '.price-current',
   ];
-  
+
   const originalPriceSelectors = [
     '.product__price .price--compare',
     '.product-single__price .price--compare',
@@ -873,17 +1150,17 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
     '.sale-price',
     '.regular-price',
   ];
-  
+
   // Extract current price
   for (const selector of priceSelectors) {
     const priceText = $(selector).first().text().trim();
     if (priceText) {
       // Improved regex to capture decimal prices: £17.71 or 17.71
       const priceMatch = priceText.match(/[£$€¥]?\s*([\d,]+\.?\d*)/);
-        if (priceMatch) {
-          const priceStr = priceMatch[1].replace(/,/g, '');
-          const parsedPrice = parseFloat(priceStr);
-          result.price = normalizePrice(parsedPrice);
+      if (priceMatch) {
+        const priceStr = priceMatch[1].replace(/,/g, '');
+        const parsedPrice = parseFloat(priceStr);
+        result.price = normalizePrice(parsedPrice);
         // Try to extract currency
         const currencyMatch = priceText.match(/[£$€¥]|GBP|USD|EUR|JPY/);
         if (currencyMatch) {
@@ -899,7 +1176,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       }
     }
   }
-  
+
   // Extract original/compare price
   for (const selector of originalPriceSelectors) {
     const priceText = $(selector).first().text().trim();
@@ -917,11 +1194,11 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       }
     }
   }
-  
+
   // Also try to find price in data attributes
   if (!result.originalPrice) {
     const comparePrice = $('[data-compare-price]').first().attr('data-compare-price') ||
-                        $('[data-compare-at-price]').first().attr('data-compare-at-price');
+      $('[data-compare-at-price]').first().attr('data-compare-at-price');
     if (comparePrice) {
       const priceMatch = comparePrice.match(/[£$€¥]?\s*([\d,]+\.?\d*)/);
       if (priceMatch) {
@@ -933,7 +1210,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       }
     }
   }
-  
+
   // Try to find strikethrough prices (common pattern: <s>£32.00</s> or ~~£32.00~~)
   if (!result.originalPrice) {
     $('s, del, .price--was, .was-price, .regular-price, [class*="was"], [class*="original"]').each((_, element) => {
@@ -952,7 +1229,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       }
     });
   }
-  
+
   // Also look for "Regular price" or "Was" text patterns in the entire page
   if (!result.originalPrice) {
     const bodyText = $('body').text();
@@ -963,7 +1240,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       /was\s*[£$€¥]?\s*([\d,]+\.?\d*)/i,
       /original\s+price\s*[£$€¥]?\s*([\d,]+\.?\d*)/i,
     ];
-    
+
     for (const pattern of regularPricePatterns) {
       const match = bodyText.match(pattern);
       if (match) {
@@ -975,7 +1252,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
         }
       }
     }
-    
+
     // Look for strikethrough pattern with tildes: ~~£32.00~~
     if (!result.originalPrice) {
       const tildeMatches = bodyText.matchAll(/~~\s*[£$€¥]?\s*([\d,]+\.?\d*)\s*~~/g);
@@ -989,7 +1266,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       }
     }
   }
-  
+
   // Look in price containers for any higher price
   if (!result.originalPrice) {
     $('.product__price, .product-single__price, .product-price, [class*="price"]').each((_, element) => {
@@ -1015,7 +1292,7 @@ function extractPrice($: cheerio.Root): { price?: number; originalPrice?: number
       }
     });
   }
-  
+
   return result;
 }
 
@@ -1030,12 +1307,12 @@ function extractTitle($: cheerio.Root): string | undefined {
     'h1[data-product-title]',
     'h1',
   ];
-  
+
   for (const selector of selectors) {
     const title = $(selector).first().text().trim();
     if (title) return title;
   }
-  
+
   return undefined;
 }
 
@@ -1050,7 +1327,7 @@ function extractDescription($: cheerio.Root): string | undefined {
     '[data-product-description]',
     '.rte',
   ];
-  
+
   for (const selector of selectors) {
     const description = $(selector).first().html() || $(selector).first().text().trim();
     if (description) {
@@ -1058,7 +1335,7 @@ function extractDescription($: cheerio.Root): string | undefined {
       return description.replace(/\s+/g, ' ').trim();
     }
   }
-  
+
   return undefined;
 }
 
@@ -1067,7 +1344,7 @@ function extractDescription($: cheerio.Root): string | undefined {
  */
 function extractCategoriesAndTags($: cheerio.Root): { categories: string[]; tags: string[] } {
   const result: { categories: string[]; tags: string[] } = { categories: [], tags: [] };
-  
+
   // Try to find breadcrumbs or navigation
   $('.breadcrumb a, nav a, [data-breadcrumb] a').each((_, element) => {
     const text = $(element).text().trim();
@@ -1075,7 +1352,7 @@ function extractCategoriesAndTags($: cheerio.Root): { categories: string[]; tags
       result.categories.push(text);
     }
   });
-  
+
   // Try to find tags
   $('.product-tags a, .tags a, [data-tags] a').each((_, element) => {
     const text = $(element).text().trim();
@@ -1083,7 +1360,7 @@ function extractCategoriesAndTags($: cheerio.Root): { categories: string[]; tags
       result.tags.push(text);
     }
   });
-  
+
   return result;
 }
 
@@ -1093,7 +1370,7 @@ function extractCategoriesAndTags($: cheerio.Root): { categories: string[]; tags
 export async function extractShopifyProduct(url: string): Promise<ExtractedProduct> {
   try {
     console.log(`🔍 Fetching product from: ${url}`);
-    
+
     // Fetch the HTML
     const response = await axios.get(url, {
       headers: {
@@ -1103,13 +1380,13 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
       },
       timeout: 30000,
     });
-    
+
     const html = response.data;
     const $ = cheerio.load(html);
-    
+
     // Extract slug
     const slug = extractSlugFromUrl(url);
-    
+
     // Initialize product object
     const product: ExtractedProduct = {
       title: '',
@@ -1119,14 +1396,15 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
       price: 0,
       currency: 'GBP',
       images: [],
+      videos: [], // Added videos property
       variants: [],
       categories: [],
       tags: [],
     };
-    
+
     // Extract from different sources (order matters - most reliable first)
     console.log('📊 Extracting data from multiple sources...');
-    
+
     // 1. JSON-LD structured data (most reliable)
     const jsonLdData = extractJsonLd($);
     if (jsonLdData.length > 0) {
@@ -1135,20 +1413,20 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
       Object.assign(product, jsonLdProduct);
       product.structuredData = jsonLdData;
     }
-    
+
     // 2. Meta tags
     const metaData = extractFromMetaTags($);
     Object.assign(product, metaData);
-    
+
     // 3. HTML elements
     if (!product.title) {
       product.title = extractTitle($) || product.metaTitle || 'Unknown Product';
     }
-    
+
     if (!product.description) {
       product.description = extractDescription($) || product.metaDescription || '';
     }
-    
+
     // 4. Price from HTML (prioritize HTML extraction as it has correct decimal format)
     const priceData = extractPrice($);
     // HTML prices are more reliable (correct decimal format), so prioritize them
@@ -1162,14 +1440,27 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
     if (priceData.currency) {
       product.currency = priceData.currency;
     }
-    
+
     // 5. Images from HTML (pass jsonLdData for better extraction)
     // Always extract images comprehensively, even if JSON-LD had some
-    const extractedImages = extractImages($, url, jsonLdData);
-    if (extractedImages.length > 0) {
-      product.images = extractedImages;
-    }
-    
+    const images = extractImages($, url, jsonLdData);
+    const scriptVideos = extractVideosFromShopifyData($, url);
+    const htmlVideos = extractVideosFromHtml($, url);
+
+    // Combine videos, avoiding duplicates
+    const videos = [...scriptVideos];
+    const seenVideoUrls = new Set(scriptVideos.map(v => v.url));
+
+    htmlVideos.forEach(v => {
+      if (!seenVideoUrls.has(v.url)) {
+        videos.push(v);
+        seenVideoUrls.add(v.url);
+      }
+    });
+
+    product.images = images;
+    product.videos = videos;
+
     // 6. Categories and tags (swap: what was extracted as categories should be tags)
     const { categories, tags } = extractCategoriesAndTags($);
     // Move categories to tags (what was extracted as categories should be tags)
@@ -1184,11 +1475,11 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
     }
     // Categories should be empty or minimal
     product.categories = [];
-    
+
     // 7. Try Shopify window object
     const shopifyData = extractFromShopifyWindow($);
     Object.assign(product, shopifyData);
-    
+
     // Also check variants for compare_at_price if originalPrice not found
     if (!product.originalPrice && product.variants && product.variants.length > 0) {
       const variantWithComparePrice = product.variants.find((v: any) => v.compareAtPrice);
@@ -1196,12 +1487,12 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
         product.originalPrice = variantWithComparePrice.compareAtPrice;
       }
     }
-    
+
     // Ensure we have at least basic data
     if (!product.title) {
       product.title = $('title').text() || 'Unknown Product';
     }
-    
+
     console.log('✅ Extraction complete!');
     console.log(`   Title: ${product.title}`);
     console.log(`   Price: ${product.currency} ${product.price}`);
@@ -1220,12 +1511,19 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
         console.log(`     ... and ${product.images.length - 3} more`);
       }
     }
+    console.log(`   Videos: ${product.videos.length}`);
+    if (product.videos.length > 0) {
+      console.log(`   Video URLs:`);
+      product.videos.slice(0, 3).forEach((vid, i) => {
+        console.log(`     ${i + 1}. ${vid.url.substring(0, 80)}${vid.url.length > 80 ? '...' : ''} (${vid.type})`);
+      });
+    }
     console.log(`   Variants: ${product.variants.length}`);
     console.log(`   Categories: ${product.categories.length}`);
     console.log(`   Tags: ${product.tags.length}`);
-    
+
     return product;
-    
+
   } catch (error: any) {
     console.error('❌ Error extracting product:', error.message);
     throw error;
@@ -1294,7 +1592,7 @@ function transformToProductFormat(product: ExtractedProduct): any {
   const now = new Date();
   const createdAt = now;
   const updatedAt = now;
-  
+
   return {
     id: generateCuid(),
     slug: product.slug,
@@ -1303,6 +1601,7 @@ function transformToProductFormat(product: ExtractedProduct): any {
     createdAt: formatDate(createdAt),
     updatedAt: formatDate(updatedAt),
     images: product.images.map(img => img.url), // Just URLs, not objects
+    videos: product.videos.map(vid => vid.url), // Just URLs
     oldPrice: formatPrice(product.originalPrice) || null,
     title: product.title,
     priceBandId: null, // Not available from extraction, set to null
@@ -1316,7 +1615,7 @@ function transformToProductFormat(product: ExtractedProduct): any {
  */
 async function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0) {
     console.log(`
 Usage: tsx extractShopifyProduct.ts <product-url> [output-file]
@@ -1327,23 +1626,23 @@ Examples:
     `);
     process.exit(1);
   }
-  
+
   const url = args[0];
   const outputFile = args[1];
-  
+
   try {
     const product = await extractShopifyProduct(url);
-    
+
     // Transform to the required format
     const transformedProduct = transformToProductFormat(product);
-    
+
     // Output as array (matching the Product.json format)
     const output = JSON.stringify([transformedProduct], null, 2);
-    
+
     if (outputFile) {
       // Use process.cwd() for output path when running as script
-      const outputPath = outputFile.startsWith('/') || outputFile.match(/^[A-Z]:/) 
-        ? outputFile 
+      const outputPath = outputFile.startsWith('/') || outputFile.match(/^[A-Z]:/)
+        ? outputFile
         : join(process.cwd(), outputFile);
       writeFileSync(outputPath, output, 'utf-8');
       console.log(`\n💾 Saved to: ${outputPath}`);
@@ -1351,7 +1650,7 @@ Examples:
       console.log('\n📄 Extracted Product Data:');
       console.log(output);
     }
-    
+
   } catch (error: any) {
     console.error('\n💥 Failed to extract product:', error.message);
     process.exit(1);

@@ -20,6 +20,7 @@ model Product {
   title       String
   description String?
   images      String[]
+  videos      String[]
   oldPrice    Decimal                 @db.Decimal(10, 2) // price per m² or base unit
   basePrice   Decimal                 @db.Decimal(10, 2) // price per m² or base unit
   createdAt   DateTime                @default(now())
