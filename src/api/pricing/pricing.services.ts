@@ -15,7 +15,6 @@ export interface PricingRequest {
 }
 
 export interface PricingResponse {
-  basePrice: number;
   dimensionPrice: number;
   customizationPrices: {
     category: string;
@@ -151,7 +150,6 @@ export async function calculateProductPrice(request: PricingRequest): Promise<Pr
   }
 
   const dimensionPrice = Number(priceCell.price);
-  const basePrice = Number(product.basePrice);
 
   // Calculate customization prices
   const customizationPrices: PricingResponse['customizationPrices'] = [];
@@ -204,7 +202,6 @@ export async function calculateProductPrice(request: PricingRequest): Promise<Pr
   const totalPrice = dimensionPrice + customizationTotal + motorizationBasePrice;
 
   return {
-    basePrice,
     dimensionPrice,
     customizationPrices,
     totalPrice,
@@ -239,28 +236,39 @@ export async function getPriceBandMatrix(priceBandId: string): Promise<PriceBand
     return null;
   }
 
-  // Get all width and height bands
-  const widthBands = await prisma.widthBand.findMany({
-    orderBy: { sortOrder: 'asc' },
+  // Extract unique width and height bands from the price cells
+  // This ensures we only return bands that are actually used in this price band
+  const widthBandMap = new Map<string, { id: string; mm: number; inches: number }>();
+  const heightBandMap = new Map<string, { id: string; mm: number; inches: number }>();
+
+  priceBand.priceCells.forEach(cell => {
+    // Add width band if not already in map
+    if (!widthBandMap.has(cell.widthBand.id)) {
+      widthBandMap.set(cell.widthBand.id, {
+        id: cell.widthBand.id,
+        mm: cell.widthBand.widthMm,
+        inches: cell.widthBand.widthInches,
+      });
+    }
+    // Add height band if not already in map
+    if (!heightBandMap.has(cell.heightBand.id)) {
+      heightBandMap.set(cell.heightBand.id, {
+        id: cell.heightBand.id,
+        mm: cell.heightBand.heightMm,
+        inches: cell.heightBand.heightInches,
+      });
+    }
   });
 
-  const heightBands = await prisma.heightBand.findMany({
-    orderBy: { sortOrder: 'asc' },
-  });
+  // Convert maps to arrays and sort by inches
+  const widthBands = Array.from(widthBandMap.values()).sort((a, b) => a.inches - b.inches);
+  const heightBands = Array.from(heightBandMap.values()).sort((a, b) => a.inches - b.inches);
 
   return {
     id: priceBand.id,
     name: priceBand.name,
-    widthBands: widthBands.map(wb => ({
-      id: wb.id,
-      mm: wb.widthMm,
-      inches: wb.widthInches,
-    })),
-    heightBands: heightBands.map(hb => ({
-      id: hb.id,
-      mm: hb.heightMm,
-      inches: hb.heightInches,
-    })),
+    widthBands,
+    heightBands,
     prices: priceBand.priceCells.map(cell => ({
       widthMm: cell.widthBand.widthMm,
       heightMm: cell.heightBand.heightMm,
@@ -340,6 +348,47 @@ export async function getProductWithPriceBand(productId: string) {
       priceBand: true,
     },
   });
+}
+
+/**
+ * Get the minimum price for a price band
+ * Finds the price cell with the smallest width × height combination
+ * This is the price shown on the product listing
+ */
+export async function getMinimumPrice(priceBandId: string): Promise<number | null> {
+  // Get all price cells for this band
+  const priceCells = await prisma.priceCell.findMany({
+    where: { priceBandId },
+    include: {
+      widthBand: true,
+      heightBand: true,
+    },
+  });
+
+  if (priceCells.length === 0) {
+    return null;
+  }
+
+  // Find the minimum price cell by sorting by width × height (area)
+  // Then by width, then by height to ensure consistent ordering
+  const sortedCells = priceCells.sort((a, b) => {
+    const areaA = a.widthBand.widthMm * a.heightBand.heightMm;
+    const areaB = b.widthBand.widthMm * b.heightBand.heightMm;
+    
+    if (areaA !== areaB) {
+      return areaA - areaB;
+    }
+    
+    // If areas are equal, sort by width first, then height
+    if (a.widthBand.widthMm !== b.widthBand.widthMm) {
+      return a.widthBand.widthMm - b.widthBand.widthMm;
+    }
+    
+    return a.heightBand.heightMm - b.heightBand.heightMm;
+  });
+
+  // Return the price of the smallest cell (minimum band)
+  return Number(sortedCells[0].price);
 }
 
 /**

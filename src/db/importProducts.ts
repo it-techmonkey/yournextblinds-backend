@@ -170,8 +170,6 @@ async function importProducts() {
             title: product.title,
             description,
             images,
-            basePrice: currentPrice,
-            oldPrice: previousPrice,
           };
 
           // Only connect tags if there are matching tags

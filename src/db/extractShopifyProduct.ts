@@ -1597,12 +1597,10 @@ function transformToProductFormat(product: ExtractedProduct): any {
     id: generateCuid(),
     slug: product.slug,
     description: stripHtmlTags(product.description) || null,
-    basePrice: formatPrice(product.price) || "0.00",
     createdAt: formatDate(createdAt),
     updatedAt: formatDate(updatedAt),
     images: product.images.map(img => img.url), // Just URLs, not objects
     videos: product.videos.map(vid => vid.url), // Just URLs
-    oldPrice: formatPrice(product.originalPrice) || null,
     title: product.title,
     priceBandId: null, // Not available from extraction, set to null
     categories: [], // Categories should be empty

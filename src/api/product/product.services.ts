@@ -1,9 +1,21 @@
 import { prisma } from '../../config/database.js';
+import { getMinimumPrice } from '../pricing/pricing.services.js';
 
 interface GetAllProductsParams {
   page?: number;
   limit?: number;
   tags?: string[];
+}
+
+/**
+ * Get minimum price for a product's price band
+ * Returns the price from the smallest width × height combination in the band
+ */
+async function getProductPrice(product: any): Promise<number | null> {
+  if (!product.priceBandId) {
+    return null;
+  }
+  return getMinimumPrice(product.priceBandId);
 }
 
 export const getAllProducts = async (params: GetAllProductsParams = {}) => {
@@ -42,10 +54,21 @@ export const getAllProducts = async (params: GetAllProductsParams = {}) => {
     take: limit,
   });
 
+  // Add price field (minimum band price) to each product
+  const productsWithPrice = await Promise.all(
+    products.map(async (product) => {
+      const price = await getProductPrice(product);
+      return {
+        ...product,
+        price: price || 0,
+      };
+    })
+  );
+
   const totalPages = Math.ceil(total / limit);
 
   return {
-    products,
+    products: productsWithPrice,
     pagination: {
       page,
       limit,
@@ -66,6 +89,15 @@ export const getProductBySlug = async (slug: string) => {
     },
   });
 
-  return product;
+  if (!product) {
+    return null;
+  }
+
+  // Add price field (minimum band price)
+  const price = await getProductPrice(product);
+  return {
+    ...product,
+    price: price || 0,
+  };
 };
 
