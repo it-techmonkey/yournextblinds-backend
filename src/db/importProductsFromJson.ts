@@ -105,6 +105,109 @@ const fabricToPriceBand: Record<string, Array<{ category: string; band: string }
 };
 
 /**
+ * Fabric-to-Tag mapping based on Bands.md
+ * Maps fabric name + category combination to required tags (light-filtering, blackout, waterproof)
+ * Structure: { fabricName: { category: ['tag1', 'tag2'] } }
+ * Note: Some fabrics appear in multiple categories with different tags
+ */
+const fabricToTags: Record<string, Record<string, string[]>> = {
+  // Roller Blinds - Light Filtering
+  'ATLANTIC': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'BERRY': { 'roller-blinds': ['light-filtering'] },
+  'CALIFORNIA': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'DOLPHIN': { 'roller-blinds': ['light-filtering'] },
+  'ELM': { 'roller-blinds': ['light-filtering'] },
+  'FABIAN': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'FEATHERWEAVE': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'FEATHER WEAVE': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'HAMBROOK': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'ILLUMINATE': { 'roller-blinds': ['light-filtering'] },
+  'JAGUAR': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'LYON': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'MARINA': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'MILTON': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'OASIS': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'OPERA': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'OPTIMUM': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'SUNRISE': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'UNITY POLARIS': { 'roller-blinds': ['light-filtering'], 'vertical-blinds': ['light-filtering'] },
+  'YACHT': { 'roller-blinds': ['light-filtering'] },
+  
+  // Roller Blinds - Black Out (some also appear in vertical)
+  'AQUALUSH': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'BLOSSOM': { 'roller-blinds': ['blackout'] },
+  'CAIRO': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'ELENA': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'FIESTA': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'GRAVITY': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'HAVANA': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'JUPITER': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'LAHORE': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'MILANO': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'RADIANCE': { 'roller-blinds': ['blackout'] },
+  'RAINDROP': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'RITA': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'SYMPHONY': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'TANGO': { 'roller-blinds': ['blackout'], 'vertical-blinds': ['blackout'] },
+  'ASPIN': { 'roller-blinds': ['blackout'] },
+  'QUIN': { 'roller-blinds': ['blackout'] },
+  
+  // Vertical Blinds - Light Filtering (only in vertical)
+  'ALABAMA': { 'vertical-blinds': ['light-filtering'] },
+  'BADAR': { 'vertical-blinds': ['light-filtering'] },
+  'BOND': { 'vertical-blinds': ['light-filtering'] },
+  'CLOUD': { 'vertical-blinds': ['light-filtering'] },
+  'CROSS STITCH': { 'vertical-blinds': ['light-filtering'] },
+  'DAISY': { 'vertical-blinds': ['light-filtering'] },
+  'DOLPHINE': { 'vertical-blinds': ['light-filtering'] },
+  'EVERSEST': { 'vertical-blinds': ['light-filtering'] },
+  'HENLY': { 'vertical-blinds': ['light-filtering'] },
+  'HENLEY': { 'vertical-blinds': ['light-filtering'] },
+  'LOUISIANA': { 'vertical-blinds': ['light-filtering'] },
+  'MUMBAI': { 'vertical-blinds': ['light-filtering'] },
+  'NARCISSUS': { 'vertical-blinds': ['light-filtering'] },
+  'PACIFIC': { 'vertical-blinds': ['light-filtering'] },
+  'PARFAIT': { 'vertical-blinds': ['light-filtering'] },
+  'PHOENIX': { 'vertical-blinds': ['light-filtering'] },
+  'ROME': { 'vertical-blinds': ['light-filtering'] },
+  'SHERWOOD': { 'vertical-blinds': ['light-filtering'] },
+  'STRIPE': { 'vertical-blinds': ['light-filtering'] },
+  'SWEET': { 'vertical-blinds': ['light-filtering'] },
+  'UNITY': { 'vertical-blinds': ['light-filtering'] },
+  
+  // Vertical Blinds - Black Out (only in vertical)
+  'KIA': { 'vertical-blinds': ['blackout'] },
+};
+
+/**
+ * Gets tags for a fabric based on category from Bands.md
+ * Returns array of tag slugs (light-filtering, blackout, waterproof)
+ */
+function getFabricTags(fabricName: string | null, categorySlug: string): string[] {
+  if (!fabricName) return [];
+  
+  const fabricTags = fabricToTags[fabricName];
+  if (!fabricTags) return [];
+  
+  // Get tags for this specific category
+  const categoryTags = fabricTags[categorySlug];
+  if (!categoryTags) return [];
+  
+  // Check if this fabric is also waterproof (for roller-blinds and vertical-blinds)
+  // Waterproof fabrics are: AQUALUSH, ELENA, FIESTA, GRAVITY, HAVANA, JUPITER, LAHORE, MILANO, TANGO
+  const waterproofFabrics = ['AQUALUSH', 'ELENA', 'FIESTA', 'GRAVITY', 'HAVANA', 'JUPITER', 'LAHORE', 'MILANO', 'TANGO'];
+  const isWaterproof = waterproofFabrics.includes(fabricName.toUpperCase()) && 
+                       (categorySlug === 'roller-blinds' || categorySlug === 'vertical-blinds');
+  
+  const tags = [...categoryTags];
+  if (isWaterproof) {
+    tags.push('waterproof');
+  }
+  
+  return tags;
+}
+
+/**
  * Creates a slug from a string
  */
 function createSlug(name: string): string {

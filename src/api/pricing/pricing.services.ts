@@ -392,6 +392,76 @@ export async function getMinimumPrice(priceBandId: string): Promise<number | nul
 }
 
 /**
+ * Get minimum prices for multiple price bands in a single query
+ * This is much more efficient than calling getMinimumPrice multiple times
+ * Returns a map of priceBandId -> minimum price
+ */
+export async function getMinimumPricesBatch(priceBandIds: string[]): Promise<Map<string, number>> {
+  if (priceBandIds.length === 0) {
+    return new Map();
+  }
+
+  // Filter out null/undefined values
+  const validPriceBandIds = priceBandIds.filter((id): id is string => Boolean(id));
+  
+  if (validPriceBandIds.length === 0) {
+    return new Map();
+  }
+
+  // Get all price cells for all bands in one query
+  const priceCells = await prisma.priceCell.findMany({
+    where: {
+      priceBandId: {
+        in: validPriceBandIds,
+      },
+    },
+    include: {
+      widthBand: true,
+      heightBand: true,
+    },
+  });
+
+  // Group price cells by priceBandId
+  const cellsByBand = new Map<string, typeof priceCells>();
+  priceCells.forEach(cell => {
+    if (!cellsByBand.has(cell.priceBandId)) {
+      cellsByBand.set(cell.priceBandId, []);
+    }
+    cellsByBand.get(cell.priceBandId)!.push(cell);
+  });
+
+  // Calculate minimum price for each band
+  const result = new Map<string, number>();
+  
+  cellsByBand.forEach((cells, priceBandId) => {
+    if (cells.length === 0) {
+      return;
+    }
+
+    // Find the minimum price cell by sorting by width × height (area)
+    const sortedCells = cells.sort((a, b) => {
+      const areaA = a.widthBand.widthMm * a.heightBand.heightMm;
+      const areaB = b.widthBand.widthMm * b.heightBand.heightMm;
+      
+      if (areaA !== areaB) {
+        return areaA - areaB;
+      }
+      
+      // If areas are equal, sort by width first, then height
+      if (a.widthBand.widthMm !== b.widthBand.widthMm) {
+        return a.widthBand.widthMm - b.widthBand.widthMm;
+      }
+      
+      return a.heightBand.heightMm - b.heightBand.heightMm;
+    });
+
+    result.set(priceBandId, Number(sortedCells[0].price));
+  });
+
+  return result;
+}
+
+/**
  * Validate cart price
  * Returns true if the calculated price matches the submitted price (within tolerance)
  */

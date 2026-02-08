@@ -10,6 +10,7 @@ export const getAllProducts = async (
     // Extract query parameters
     const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+    const search = req.query.search ? String(req.query.search).trim() : undefined;
     
     // Extract tags filter (can be comma-separated string or array)
     let tags: string[] | undefined;
@@ -46,6 +47,7 @@ export const getAllProducts = async (
       page,
       limit,
       tags,
+      search,
     });
 
     res.status(200).json({
