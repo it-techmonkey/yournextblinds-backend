@@ -5,37 +5,36 @@ import { join } from 'path';
 
 /**
  * Extracts product data from a Shopify product URL
+ * 
+ * This script extracts all fields from the Product schema (prisma/schema.prisma):
+ * - title: Extracted from HTML/JSON-LD (required - slug will be generated from this)
+ * - description: Extracted from HTML/JSON-LD (optional)
+ * - images: Array of image URLs (String[])
+ * - videos: Array of video URLs (String[])
+ * 
+ * Note: The following fields are NOT extracted and will be assigned automatically:
+ * - slug: Generated from product title during import
+ * - categories: Assigned automatically from DB based on title/description matching
+ * - tags: Assigned automatically from DB based on title/description matching
+ * - priceBandId: Assigned automatically based on title/description mapping (mapping to be provided)
  */
 interface ExtractedProduct {
-  // Basic Info
+  // Required fields (matching Product schema)
   title: string;
-  description: string;
-  slug: string;
-  canonicalUrl: string;
-
-  // Pricing
-  price: number;
+  description?: string;
+  images: string[]; // Array of image URLs (matching String[] in schema)
+  videos: string[]; // Array of video URLs (matching String[] in schema)
+  
+  // Optional fields that might be useful but not in schema
+  canonicalUrl?: string;
+  
+  // Pricing info (for reference, but priceBandId is set separately)
+  price?: number;
   originalPrice?: number;
-  currency: string;
-  compareAtPrice?: number;
-
-  // Media
-  images: Array<{
-    url: string;
-    alt?: string;
-    position: number;
-  }>;
-
-  // Videos
-  videos: Array<{
-    url: string;
-    thumbnail?: string;
-    type: 'video' | 'external_video';
-    position: number;
-  }>;
-
-  // Variants
-  variants: Array<{
+  currency?: string;
+  
+  // Variants (for reference, pricing comes from PriceBand)
+  variants?: Array<{
     id: string;
     title: string;
     price: number;
@@ -45,41 +44,24 @@ interface ExtractedProduct {
     options?: Record<string, string>;
   }>;
 
-  // Categories & Tags
-  categories: string[];
-  tags: string[];
-
-  // SEO
+  // SEO (for reference, not in schema but useful)
   metaTitle?: string;
   metaDescription?: string;
 
-  // Additional Info
+  // Additional Info (for reference)
   vendor?: string;
   productType?: string;
   stockStatus?: string;
   availability?: string;
 
-  // Structured Data
+  // Structured Data (for reference)
   structuredData?: any;
 }
 
 /**
- * Extracts slug from URL
+ * Slug extraction is no longer needed - slug will be generated from product title
+ * during import process
  */
-function extractSlugFromUrl(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split('/').filter(Boolean);
-    const productsIndex = pathParts.indexOf('products');
-    if (productsIndex !== -1 && productsIndex < pathParts.length - 1) {
-      return pathParts[productsIndex + 1];
-    }
-    return pathParts[pathParts.length - 1] || 'unknown';
-  } catch {
-    const match = url.match(/\/products\/([^/?]+)/);
-    return match ? match[1] : 'unknown';
-  }
-}
 
 /**
  * Extracts JSON-LD structured data from HTML
@@ -148,12 +130,8 @@ function extractFromJsonLd(jsonLdData: any[]): Partial<ExtractedProduct> {
           product.vendor = typeof productData.brand === 'string' ? productData.brand : productData.brand.name;
         }
 
-        // Extract categories
-        if (productData.category) {
-          product.categories = Array.isArray(productData.category)
-            ? productData.category
-            : [productData.category];
-        }
+        // Categories are now managed separately from navigation
+        // No longer extracting from JSON-LD
       }
     }
   }
@@ -183,7 +161,8 @@ function extractFromShopifyWindow($: cheerio.Root): Partial<ExtractedProduct> {
           if (productData.description) product.description = productData.description;
           if (productData.vendor) product.vendor = productData.vendor;
           if (productData.type) product.productType = productData.type;
-          if (productData.tags) product.tags = Array.isArray(productData.tags) ? productData.tags : productData.tags.split(',');
+          // Tags are now managed separately from filters
+          // No longer extracting from Shopify window object
         }
 
         // Try to extract variants
@@ -1340,28 +1319,15 @@ function extractDescription($: cheerio.Root): string | undefined {
 }
 
 /**
- * Extracts categories and tags from HTML
+ * Categories and tags are now managed separately:
+ * - Categories: Created from navigation.ts navlinks
+ * - Tags: Created from filter options (colors and patterns)
+ * This function is deprecated and returns empty arrays
  */
 function extractCategoriesAndTags($: cheerio.Root): { categories: string[]; tags: string[] } {
-  const result: { categories: string[]; tags: string[] } = { categories: [], tags: [] };
-
-  // Try to find breadcrumbs or navigation
-  $('.breadcrumb a, nav a, [data-breadcrumb] a').each((_, element) => {
-    const text = $(element).text().trim();
-    if (text && text.toLowerCase() !== 'home' && !result.categories.includes(text)) {
-      result.categories.push(text);
-    }
-  });
-
-  // Try to find tags
-  $('.product-tags a, .tags a, [data-tags] a').each((_, element) => {
-    const text = $(element).text().trim();
-    if (text && !result.tags.includes(text)) {
-      result.tags.push(text);
-    }
-  });
-
-  return result;
+  // Categories and tags are no longer extracted from HTML
+  // They are managed separately based on navigation and filters
+  return { categories: [], tags: [] };
 }
 
 /**
@@ -1384,22 +1350,15 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
     const html = response.data;
     const $ = cheerio.load(html);
 
-    // Extract slug
-    const slug = extractSlugFromUrl(url);
-
-    // Initialize product object
+    // Initialize product object (matching Product schema)
+    // Note: slug will be generated from title during import
     const product: ExtractedProduct = {
       title: '',
-      description: '',
-      slug,
-      canonicalUrl: url,
-      price: 0,
-      currency: 'USD',
+      description: undefined,
       images: [],
-      videos: [], // Added videos property
+      videos: [],
+      canonicalUrl: url,
       variants: [],
-      categories: [],
-      tags: [],
     };
 
     // Extract from different sources (order matters - most reliable first)
@@ -1458,23 +1417,9 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
       }
     });
 
-    product.images = images;
-    product.videos = videos;
-
-    // 6. Categories and tags (swap: what was extracted as categories should be tags)
-    const { categories, tags } = extractCategoriesAndTags($);
-    // Move categories to tags (what was extracted as categories should be tags)
-    if (categories.length > 0) {
-      const uniqueTags = Array.from(new Set([...product.tags, ...categories]));
-      product.tags = uniqueTags;
-    }
-    // Keep tags from extraction as additional tags
-    if (tags.length > 0) {
-      const uniqueTags = Array.from(new Set([...product.tags, ...tags]));
-      product.tags = uniqueTags;
-    }
-    // Categories should be empty or minimal
-    product.categories = [];
+    // 6. Extract images and videos as arrays of URLs (matching Product schema)
+    product.images = images.map(img => img.url);
+    product.videos = videos.map(vid => vid.url);
 
     // 7. Try Shopify window object
     const shopifyData = extractFromShopifyWindow($);
@@ -1495,32 +1440,31 @@ export async function extractShopifyProduct(url: string): Promise<ExtractedProdu
 
     console.log('✅ Extraction complete!');
     console.log(`   Title: ${product.title}`);
-    console.log(`   Price: ${product.currency} ${product.price}`);
-    if (product.originalPrice) {
-      console.log(`   Original Price: ${product.currency} ${product.originalPrice}`);
-    } else {
-      console.log(`   Original Price: Not found`);
+    if (product.price) {
+      console.log(`   Price: ${product.currency || 'USD'} ${product.price}`);
     }
-    console.log(`   Images: ${product.images.length} (all Shopify CDN links extracted)`);
+    if (product.originalPrice) {
+      console.log(`   Original Price: ${product.currency || 'USD'} ${product.originalPrice}`);
+    }
+    console.log(`   Images: ${product.images.length} URLs extracted`);
     if (product.images.length > 0) {
-      console.log(`   Image URLs:`);
-      product.images.slice(0, 3).forEach((img, i) => {
-        console.log(`     ${i + 1}. ${img.url.substring(0, 80)}${img.url.length > 80 ? '...' : ''}`);
+      console.log(`   Image URLs (first 3):`);
+      product.images.slice(0, 3).forEach((imgUrl, i) => {
+        console.log(`     ${i + 1}. ${imgUrl.substring(0, 80)}${imgUrl.length > 80 ? '...' : ''}`);
       });
       if (product.images.length > 3) {
         console.log(`     ... and ${product.images.length - 3} more`);
       }
     }
-    console.log(`   Videos: ${product.videos.length}`);
+    console.log(`   Videos: ${product.videos.length} URLs extracted`);
     if (product.videos.length > 0) {
-      console.log(`   Video URLs:`);
-      product.videos.slice(0, 3).forEach((vid, i) => {
-        console.log(`     ${i + 1}. ${vid.url.substring(0, 80)}${vid.url.length > 80 ? '...' : ''} (${vid.type})`);
+      console.log(`   Video URLs (first 3):`);
+      product.videos.slice(0, 3).forEach((vidUrl, i) => {
+        console.log(`     ${i + 1}. ${vidUrl.substring(0, 80)}${vidUrl.length > 80 ? '...' : ''}`);
       });
     }
-    console.log(`   Variants: ${product.variants.length}`);
-    console.log(`   Categories: ${product.categories.length}`);
-    console.log(`   Tags: ${product.tags.length}`);
+    console.log(`   Variants: ${product.variants?.length || 0}`);
+    console.log(`   Description: ${product.description ? 'Yes' : 'No'}`);
 
     return product;
 
@@ -1586,7 +1530,13 @@ function generateCuid(): string {
 }
 
 /**
- * Transforms extracted product to the required format
+ * Transforms extracted product to match Product schema format
+ * 
+ * Note: The following fields are NOT included and will be assigned automatically:
+ * - slug: Generated from product title during import
+ * - categories: Assigned automatically from DB based on title/description matching
+ * - tags: Assigned automatically from DB based on title/description matching
+ * - priceBandId: Assigned automatically based on title/description mapping
  */
 function transformToProductFormat(product: ExtractedProduct): any {
   const now = new Date();
@@ -1595,16 +1545,13 @@ function transformToProductFormat(product: ExtractedProduct): any {
 
   return {
     id: generateCuid(),
-    slug: product.slug,
+    title: product.title,
     description: stripHtmlTags(product.description) || null,
+    images: product.images, // Already an array of URLs (String[])
+    videos: product.videos, // Already an array of URLs (String[])
     createdAt: formatDate(createdAt),
     updatedAt: formatDate(updatedAt),
-    images: product.images.map(img => img.url), // Just URLs, not objects
-    videos: product.videos.map(vid => vid.url), // Just URLs
-    title: product.title,
-    priceBandId: null, // Not available from extraction, set to null
-    categories: [], // Categories should be empty
-    tags: product.tags || [], // What was extracted as categories is now tags
+    // slug, categories, tags, and priceBandId will be assigned automatically during import
   };
 }
 
