@@ -5,3 +5,4 @@ dist
 
 /src/generated/prisma
 /src/db/dataset_shopify_2025-12-08_17-01-48-275.json
+/syncCollections.mjs
