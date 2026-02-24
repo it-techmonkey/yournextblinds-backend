@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import productRoutes from '../product/product.routes.js';
-import categoryRoutes from '../category/category.routes.js';
 import pricingRoutes from '../pricing/pricing.routes.js';
+import orderRoutes from '../order/order.routes.js';
+import webhookRoutes from '../order/webhook.routes.js';
 
 const router = Router();
 
@@ -14,20 +14,14 @@ router.get('/health', (req, res) => {
   });
 });
 
-//Product route
-router.use('/products', productRoutes);
-
-//Category route
-router.use('/categories', categoryRoutes);
-
 //Pricing route
 router.use('/pricing', pricingRoutes);
 
+//Order route (Draft Order checkout)
+router.use('/orders', orderRoutes);
 
-// Placeholder routes - to be expanded
-// router.use('/users', userRoutes);
-// router.use('/orders', orderRoutes);
-// router.use('/cart', cartRoutes);
+//Shopify webhook routes
+router.use('/webhooks/shopify', webhookRoutes);
 
 export default router;
 

@@ -1,12 +1,21 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './config/database.js';
+import { initializeProductCache } from './config/shopifyProductCache.js';
 
 const startServer = async () => {
   try {
     // Test database connection
     await prisma.$connect();
     console.log('✅ Database connected successfully');
+
+    // Initialize Shopify product cache (handle → priceBandName)
+    try {
+      await initializeProductCache();
+      console.log('✅ Shopify product cache initialized');
+    } catch (err) {
+      console.warn('⚠️  Shopify product cache failed to initialize (will retry on first request):', (err as Error).message);
+    }
 
     // Create Express app
     const app = createApp();

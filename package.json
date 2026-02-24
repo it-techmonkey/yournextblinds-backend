@@ -9,13 +9,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "tsx prisma/seed.ts",
-    "extract:shopify": "tsx src/db/extractShopifyProduct.ts",
-    "extract:shopify-category": "tsx src/db/extractShopifyCategory.ts",
-    "import:json": "tsx src/db/importProductsFromJson.ts",
-    "create:categories": "tsx src/db/createCategories.ts",
-    "create:tags": "tsx src/db/createTags.ts",
-    "assign:categories-tags": "tsx src/db/assignCategoriesAndTags.ts",
+
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -25,6 +19,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.1.0",
     "@prisma/client": "^7.3.0",
+    "@shopify/shopify-api": "^12.3.0",
     "axios": "^1.13.2",
     "cheerio": "^1.1.2",
     "cors": "^2.8.5",

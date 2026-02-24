@@ -11,13 +11,13 @@ export const calculatePrice = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { productId, widthInches, heightInches, customizations } = req.body;
+    const { handle, widthInches, heightInches, customizations } = req.body;
 
     // Validate required fields
-    if (!productId) {
+    if (!handle) {
       res.status(400).json({
         success: false,
-        error: { message: 'productId is required' },
+        error: { message: 'handle is required' },
       });
       return;
     }
@@ -39,7 +39,7 @@ export const calculatePrice = async (
     }
 
     const pricing = await pricingService.calculateProductPrice({
-      productId,
+      handle,
       widthInches,
       heightInches,
       customizations,
@@ -50,7 +50,7 @@ export const calculatePrice = async (
       data: pricing,
     });
   } catch (error: any) {
-    if (error.message === 'Product not found') {
+    if (error.message?.includes('not found') || error.message?.includes('no price band')) {
       res.status(404).json({
         success: false,
         error: { message: error.message },
@@ -71,19 +71,19 @@ export const validatePrice = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { productId, widthInches, heightInches, customizations, submittedPrice } = req.body;
+    const { handle, widthInches, heightInches, customizations, submittedPrice } = req.body;
 
     // Validate required fields
-    if (!productId || typeof widthInches !== 'number' || typeof heightInches !== 'number' || typeof submittedPrice !== 'number') {
+    if (!handle || typeof widthInches !== 'number' || typeof heightInches !== 'number' || typeof submittedPrice !== 'number') {
       res.status(400).json({
         success: false,
-        error: { message: 'productId, widthInches, heightInches, and submittedPrice are required' },
+        error: { message: 'handle, widthInches, heightInches, and submittedPrice are required' },
       });
       return;
     }
 
     const validation = await pricingService.validateCartPrice(
-      { productId, widthInches, heightInches, customizations },
+      { handle, widthInches, heightInches, customizations },
       submittedPrice
     );
 
@@ -92,7 +92,7 @@ export const validatePrice = async (
       data: validation,
     });
   } catch (error: any) {
-    if (error.message === 'Product not found') {
+    if (error.message?.includes('not found') || error.message?.includes('no price band')) {
       res.status(404).json({
         success: false,
         error: { message: error.message },
@@ -105,7 +105,7 @@ export const validatePrice = async (
 
 /**
  * Get price band matrix for a product
- * GET /api/pricing/matrix/:productId
+ * GET /api/pricing/matrix/:handle
  */
 export const getPriceMatrix = async (
   req: Request,
@@ -113,36 +113,28 @@ export const getPriceMatrix = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { productId } = req.params;
+    const { handle } = req.params;
 
-    if (!productId) {
+    if (!handle) {
       res.status(400).json({
         success: false,
-        error: { message: 'productId is required' },
+        error: { message: 'handle is required' },
       });
       return;
     }
 
-    // Get product to find its price band
-    const product = await pricingService.getProductWithPriceBand(productId);
-    
-    if (!product) {
+    // Resolve handle → PriceBand via Shopify cache
+    const priceBand = await pricingService.resolveHandleToPriceBand(handle);
+
+    if (!priceBand) {
       res.status(404).json({
         success: false,
-        error: { message: 'Product not found' },
+        error: { message: `Product "${handle}" not found or has no price band` },
       });
       return;
     }
 
-    if (!product.priceBandId || !product.priceBand) {
-      res.status(404).json({
-        success: false,
-        error: { message: 'Product does not have a price band assigned' },
-      });
-      return;
-    }
-
-    const matrix = await pricingService.getPriceBandMatrix(product.priceBandId);
+    const matrix = await pricingService.getPriceBandMatrix(priceBand.id);
 
     if (!matrix) {
       res.status(404).json({
@@ -211,6 +203,27 @@ export const getSizeBands = async (
           inches: hb.heightInches,
         })),
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get minimum prices for all products (by handle)
+ * GET /api/pricing/minimum-prices
+ */
+export const getMinimumPrices = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const prices = await pricingService.getMinimumPricesByHandle();
+
+    res.status(200).json({
+      success: true,
+      data: prices,
     });
   } catch (error) {
     next(error);

@@ -13,41 +13,6 @@ datasource db {
   provider = "postgresql"
 }
 
-
-model Product {
-  id          String                  @id @default(cuid())
-  slug        String                  @unique
-  title       String
-  description String?
-  images      String[]
-  videos      String[]
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
-  categories  Category[]
-  tags        Tags[]
-  priceBandId String?
-  priceBand   PriceBand?              @relation(fields: [priceBandId], references: [id])
-  cartItems   CartItem[]
-  orderItems  OrderItem[]
-}
-
-model Category {
-  id          String            @id @default(cuid())
-  slug        String            @unique
-  name        String
-  description String?
-  products    Product[]
-}
-
-model Tags {
-  id          String            @id @default(cuid())
-  name        String            @unique
-  slug        String            @unique
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  products    Product[]
-}
-
 // ============================================
 // Pricing Tables
 // ============================================
@@ -59,7 +24,6 @@ model PriceBand {
   description String?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
-  products    Product[]
   priceCells  PriceCell[]
 }
 
@@ -135,80 +99,31 @@ model CustomizationPricing {
 }
 
 // ============================================
-// Cart & Order Models
+// Order Tracking (synced from Shopify webhooks)
 // ============================================
-
-model CartItem {
-  id              String   @id @default(cuid())
-  productId       String
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
-  // Configuration stored as JSON
-  configuration   Json     // ProductConfiguration including roomType, blindName, dimensions, etc.
-  
-  // Blind identification
-  roomType        String?  // e.g., "bedroom", "kitchen", "living-room"
-  blindName       String?  // e.g., "West Wall", "Main Window"
-  
-  quantity        Int      @default(1)
-  price           Decimal  @db.Decimal(10, 2) // Price at time of adding to cart
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@index([productId])
-  @@index([createdAt])
-}
 
 model Order {
   id              String      @id @default(cuid())
   orderNumber     String      @unique
   status          OrderStatus @default(PENDING)
-  
+
   // Customer information
   customerEmail   String?
   customerName    String?
   shippingAddress Json?
-  
-  // Order items
-  items           OrderItem[]
-  
+
   // Pricing
   subtotal        Decimal     @db.Decimal(10, 2)
   tax             Decimal?    @db.Decimal(10, 2)
   shipping        Decimal?    @db.Decimal(10, 2)
   total           Decimal     @db.Decimal(10, 2)
-  
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
-  
+
   @@index([orderNumber])
   @@index([status])
   @@index([createdAt])
-}
-
-model OrderItem {
-  id              String   @id @default(cuid())
-  orderId         String
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
-  productId       String
-  product         Product  @relation(fields: [productId], references: [id])
-  
-  // Configuration stored as JSON
-  configuration   Json     // ProductConfiguration including roomType, blindName, dimensions, etc.
-  
-  // Blind identification
-  roomType        String?  // e.g., "bedroom", "kitchen", "living-room"
-  blindName       String?  // e.g., "West Wall", "Main Window"
-  
-  quantity        Int      @default(1)
-  price           Decimal  @db.Decimal(10, 2) // Price at time of order
-  
-  createdAt       DateTime @default(now())
-  
-  @@index([orderId])
-  @@index([productId])
 }
 
 enum OrderStatus {

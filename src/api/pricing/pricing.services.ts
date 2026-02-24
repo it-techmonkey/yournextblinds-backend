@@ -1,11 +1,12 @@
 import { prisma } from '../../config/database.js';
+import { getPriceBandNameByHandle, getAllCachedProducts } from '../../config/shopifyProductCache.js';
 
 // ============================================
 // Types
 // ============================================
 
 export interface PricingRequest {
-  productId: string;
+  handle: string;
   widthInches: number;
   heightInches: number;
   customizations?: {
@@ -47,14 +48,19 @@ export interface CustomizationPricingData {
 // ============================================
 
 /**
- * Find the ceiling width band for a given width in inches
- * Returns the smallest band that can accommodate the width
+ * Find the ceiling width band for a given width in inches,
+ * scoped to bands that have PriceCells for the given priceBandId.
+ * Returns the smallest band that can accommodate the width.
  */
-async function findCeilingWidthBand(widthInches: number) {
+async function findCeilingWidthBand(widthInches: number, priceBandId: string) {
+  // Only consider width bands that have price cells for this price band
   const widthBand = await prisma.widthBand.findFirst({
     where: {
       widthInches: {
         gte: Math.ceil(widthInches),
+      },
+      priceCells: {
+        some: { priceBandId },
       },
     },
     orderBy: {
@@ -62,9 +68,14 @@ async function findCeilingWidthBand(widthInches: number) {
     },
   });
 
-  // If no band found, return the largest band
+  // If no band found, return the largest band in this price band's set
   if (!widthBand) {
     return prisma.widthBand.findFirst({
+      where: {
+        priceCells: {
+          some: { priceBandId },
+        },
+      },
       orderBy: {
         widthInches: 'desc',
       },
@@ -75,14 +86,19 @@ async function findCeilingWidthBand(widthInches: number) {
 }
 
 /**
- * Find the ceiling height band for a given height in inches
- * Returns the smallest band that can accommodate the height
+ * Find the ceiling height band for a given height in inches,
+ * scoped to bands that have PriceCells for the given priceBandId.
+ * Returns the smallest band that can accommodate the height.
  */
-async function findCeilingHeightBand(heightInches: number) {
+async function findCeilingHeightBand(heightInches: number, priceBandId: string) {
+  // Only consider height bands that have price cells for this price band
   const heightBand = await prisma.heightBand.findFirst({
     where: {
       heightInches: {
         gte: Math.ceil(heightInches),
+      },
+      priceCells: {
+        some: { priceBandId },
       },
     },
     orderBy: {
@@ -90,9 +106,14 @@ async function findCeilingHeightBand(heightInches: number) {
     },
   });
 
-  // If no band found, return the largest band
+  // If no band found, return the largest band in this price band's set
   if (!heightBand) {
     return prisma.heightBand.findFirst({
+      where: {
+        priceCells: {
+          some: { priceBandId },
+        },
+      },
       orderBy: {
         heightInches: 'desc',
       },
@@ -107,28 +128,36 @@ async function findCeilingHeightBand(heightInches: number) {
 // ============================================
 
 /**
- * Calculate the price for a product with given dimensions and customizations
+ * Resolve a Shopify product handle to a PriceBand via the Shopify metafield cache.
  */
-export async function calculateProductPrice(request: PricingRequest): Promise<PricingResponse> {
-  // Get the product with its price band
-  const product = await prisma.product.findUnique({
-    where: { id: request.productId },
-    include: {
-      priceBand: true,
-    },
+async function resolvePriceBand(handle: string) {
+  const priceBandName = await getPriceBandNameByHandle(handle);
+  if (!priceBandName) {
+    throw new Error(`Product "${handle}" not found or has no price band assigned`);
+  }
+
+  const priceBand = await prisma.priceBand.findUnique({
+    where: { name: priceBandName },
   });
 
-  if (!product) {
-    throw new Error('Product not found');
+  if (!priceBand) {
+    throw new Error(`Price band "${priceBandName}" not found in database`);
   }
 
-  if (!product.priceBandId || !product.priceBand) {
-    throw new Error('Product does not have a price band assigned');
-  }
+  return priceBand;
+}
 
-  // Find the ceiling bands for the given dimensions
-  const widthBand = await findCeilingWidthBand(request.widthInches);
-  const heightBand = await findCeilingHeightBand(request.heightInches);
+/**
+ * Calculate the price for a product with given dimensions and customizations.
+ * Accepts a Shopify product handle — resolves price band via cached metafield.
+ */
+export async function calculateProductPrice(request: PricingRequest): Promise<PricingResponse> {
+  // Resolve handle → PriceBand via Shopify cache
+  const priceBand = await resolvePriceBand(request.handle);
+
+  // Find the ceiling bands for the given dimensions (scoped to this price band)
+  const widthBand = await findCeilingWidthBand(request.widthInches, priceBand.id);
+  const heightBand = await findCeilingHeightBand(request.heightInches, priceBand.id);
 
   if (!widthBand || !heightBand) {
     throw new Error('Unable to find appropriate size bands');
@@ -138,7 +167,7 @@ export async function calculateProductPrice(request: PricingRequest): Promise<Pr
   const priceCell = await prisma.priceCell.findUnique({
     where: {
       priceBandId_widthBandId_heightBandId: {
-        priceBandId: product.priceBandId,
+        priceBandId: priceBand.id,
         widthBandId: widthBand.id,
         heightBandId: heightBand.id,
       },
@@ -339,15 +368,18 @@ export async function getPriceBandByName(name: string) {
 }
 
 /**
- * Get product with its price band
+ * Resolve a product handle to its PriceBand (via Shopify metafield cache).
+ * Returns the product title and PriceBand, or null.
  */
-export async function getProductWithPriceBand(productId: string) {
-  return prisma.product.findUnique({
-    where: { id: productId },
-    include: {
-      priceBand: true,
-    },
+export async function resolveHandleToPriceBand(handle: string) {
+  const priceBandName = await getPriceBandNameByHandle(handle);
+  if (!priceBandName) return null;
+
+  const priceBand = await prisma.priceBand.findUnique({
+    where: { name: priceBandName },
   });
+
+  return priceBand;
 }
 
 /**
@@ -478,4 +510,43 @@ export async function validateCartPrice(
     calculatedPrice: pricing.totalPrice,
     difference,
   };
+}
+
+/**
+ * Get minimum prices for all products by handle (via Shopify product cache).
+ * Returns a map of handle → minimum price.
+ */
+export async function getMinimumPricesByHandle(): Promise<Record<string, number>> {
+  const allProducts = await getAllCachedProducts();
+  const result: Record<string, number> = {};
+
+  // Collect unique price band names
+  const bandNames = new Set<string>();
+  for (const [, product] of allProducts) {
+    if (product.priceBandName) bandNames.add(product.priceBandName);
+  }
+
+  // Fetch all price bands by name in one query
+  const priceBands = await prisma.priceBand.findMany({
+    where: { name: { in: Array.from(bandNames) } },
+  });
+  const bandNameToId = new Map(priceBands.map(b => [b.name, b.id]));
+
+  // Get minimum prices in batch
+  const priceBandIds = priceBands.map(b => b.id);
+  const minPrices = await getMinimumPricesBatch(priceBandIds);
+
+  // Build result map: handle → minimum price
+  for (const [handle, product] of allProducts) {
+    if (!product.priceBandName) continue;
+    const bandId = bandNameToId.get(product.priceBandName);
+    if (bandId) {
+      const price = minPrices.get(bandId);
+      if (price !== undefined) {
+        result[handle] = price;
+      }
+    }
+  }
+
+  return result;
 }
