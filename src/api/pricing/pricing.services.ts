@@ -202,6 +202,23 @@ export async function calculateProductPrice(request: PricingRequest): Promise<Pr
             },
           },
         },
+      }) ?? await prisma.customizationOption.findUnique({
+        where: {
+          category_optionId: {
+            category: customization.category === 'cassette-bar' ? 'roller-cassette' : customization.category,
+            optionId: customization.optionId,
+          },
+        },
+        include: {
+          pricingEntries: {
+            where: {
+              OR: [
+                { widthBandId: null },
+                { widthBandId: widthBand.id },
+              ],
+            },
+          },
+        },
       });
 
       if (option && option.pricingEntries.length > 0) {
